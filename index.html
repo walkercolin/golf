@@ -10,6 +10,7 @@
   <meta name="description" content="A private, phone-first golf score and GPS shot tracker.">
   <title>Haggis Golf</title>
   <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23123f2b'/%3E%3Cpath d='M31 50V13l20 8-20 8' fill='%23f4c95d' stroke='%23f4c95d' stroke-width='3' stroke-linejoin='round'/%3E%3Ccircle cx='22' cy='50' r='7' fill='%23fff'/%3E%3C/svg%3E">
   <style>
     :root { --forest:#123f2b; --forest-2:#1e5c3f; --lime:#cdea72; --gold:#f4c95d; --paper:#f5f7f1; --ink:#14231b; --muted:#66746b; --line:#d9dfd7; --white:#fff; --danger:#a63d40; }
@@ -44,7 +45,7 @@
     .text-button { border:0; color:var(--forest-2); background:transparent; font-weight:750; text-decoration:underline; text-underline-offset:3px; }
     .danger-button { min-height:46px; padding:0 14px; border:1px solid #e1b9ba; border-radius:12px; color:var(--danger); background:#fff; font-weight:750; }
     .history-head { display:flex; justify-content:space-between; align-items:end; margin:28px 2px 10px; }
-    .round-row { display:grid; grid-template-columns:1fr auto; gap:10px; padding:14px 0; border-bottom:1px solid var(--line); }
+    .round-row { display:grid; grid-template-columns:1fr auto; gap:10px; width:100%; padding:14px 0; border:0; border-bottom:1px solid var(--line); color:inherit; background:transparent; text-align:left; }
     .round-row:last-child { border:0; }
     .round-score { font-size:1.5rem; font-weight:900; color:var(--forest); }
     .empty { padding:25px 10px; text-align:center; color:var(--muted); }
@@ -75,7 +76,20 @@
     .shot-num { width:31px; height:31px; display:grid; place-items:center; border-radius:50%; color:#fff; background:var(--forest-2); font-size:.82rem; font-weight:850; }
     .shot strong { display:block; }
     .shot small { color:var(--muted); }
-    .mini-map { width:100%; height:180px; margin-top:14px; border:1px solid var(--line); border-radius:16px; background:linear-gradient(135deg,#eaf1e6,#f7f8f2); }
+    .quick-actions { display:grid; grid-template-columns:1.4fr 1fr; gap:10px; margin:18px 0 4px; }
+    .home-title { margin:0; font-size:1.7rem; }
+    .course-map { width:calc(100% + 36px); height:min(42dvh,340px); margin:-20px -18px 14px; background:#dfe5dc; z-index:0; }
+    .detail-map { width:100%; height:250px; margin:14px 0; border-radius:15px; background:#dfe5dc; overflow:hidden; }
+    .leaflet-control-attribution { font-size:9px !important; }
+    .shot-pin { width:28px !important; height:28px !important; margin-left:-14px !important; margin-top:-14px !important; border:2px solid #fff; border-radius:50%; color:#fff; background:var(--forest); box-shadow:0 2px 8px rgb(0 0 0 / .35); display:grid !important; place-items:center; font-weight:900; font-size:.75rem; }
+    .current-pin { width:18px; height:18px; border:3px solid #fff; border-radius:50%; background:#2f80ed; box-shadow:0 0 0 4px rgb(47 128 237 / .28),0 2px 8px rgb(0 0 0 / .35); }
+    .score-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+    .score-field { display:grid; grid-template-columns:auto 1fr; gap:8px; align-items:center; padding:8px; border:1px solid var(--line); border-radius:12px; }
+    .score-field label { font-size:.78rem; font-weight:800; }
+    .score-field input { min-height:40px; padding:0 8px; text-align:center; }
+    .detail-score { display:grid; grid-template-columns:repeat(6,1fr); gap:6px; margin:14px 0; }
+    .detail-hole { padding:8px 2px; border-radius:9px; text-align:center; background:#edf1eb; }
+    .detail-hole small,.detail-hole strong { display:block; }
     .dialog { position:fixed; inset:0; z-index:10; display:none; align-items:end; justify-content:center; padding:18px; background:rgb(8 26 18 / .58); }
     .dialog.open { display:flex; }
     .sheet { width:min(100%,524px); max-height:88dvh; overflow:auto; padding:20px; border-radius:24px 24px 16px 16px; background:#fff; }
@@ -83,7 +97,7 @@
     .toast { position:fixed; left:50%; bottom:calc(20px + env(safe-area-inset-bottom)); z-index:30; transform:translate(-50%,20px); opacity:0; pointer-events:none; padding:11px 16px; border-radius:999px; color:#fff; background:#10291e; box-shadow:0 8px 24px rgb(0 0 0 / .25); transition:.22s ease; white-space:nowrap; }
     .toast.show { opacity:1; transform:translate(-50%,0); }
     .hidden { display:none !important; }
-    @media (min-width:700px) { body { padding:24px 0; } .app { min-height:calc(100dvh - 48px); border-radius:25px; overflow:hidden; } }
+    @media (min-width:700px) { body { padding:24px 0; } .app { min-height:calc(100dvh - 48px); border-radius:25px; overflow:hidden; } .course-map { height:380px; } }
   </style>
 </head>
 <body>
@@ -106,34 +120,20 @@
       </section>
 
       <section id="startView" class="hidden">
-        <div class="eyebrow">Your pocket scorecard</div>
-        <h1>Play the course.<br>Keep every shot.</h1>
-        <p class="muted">Start a round, choose your club and tap once from where you hit.</p>
-
-        <div id="accountCard" class="card" style="margin-top:20px"></div>
-
         <div id="resumeRound"></div>
 
-        <form id="startForm" class="card stack" style="margin-top:22px">
-          <div class="field">
-            <label for="courseName">Course</label>
-            <input id="courseName" name="courseName" autocomplete="off" placeholder="e.g. Cheltenham Golf Club" required>
-          </div>
-          <div class="field">
-            <label>Round length</label>
-            <div class="segmented" role="group" aria-label="Round length">
-              <button type="button" class="holes active" data-holes="9">9 holes</button>
-              <button type="button" class="holes" data-holes="18">18 holes</button>
-            </div>
-          </div>
-          <button class="primary" type="submit">Start round</button>
-        </form>
+        <div class="quick-actions">
+          <button id="openStartRound" class="primary" type="button">Start round</button>
+          <button id="openImportRound" class="secondary" type="button">Add old round</button>
+        </div>
 
-        <div class="history-head"><h2>Recent rounds</h2><button id="viewAllButton" class="text-button" type="button">View all</button></div>
+        <div class="history-head"><h1 class="home-title">Recent rounds</h1><button id="viewAllButton" class="text-button" type="button">View all</button></div>
         <div id="recentRounds" class="card"></div>
+        <div id="accountCard" class="card" style="margin-top:16px"></div>
       </section>
 
       <section id="roundView" class="hidden">
+        <div id="courseMap" class="course-map" aria-label="Satellite map showing your location and recorded shots"></div>
         <div class="round-header">
           <div>
             <div id="activeCourse" class="eyebrow"></div>
@@ -158,7 +158,6 @@
         </div>
         <button id="abandonActiveRound" class="text-button" type="button" style="display:block;margin:18px auto 0;color:var(--danger)">Abandon round</button>
 
-        <canvas id="shotMap" class="mini-map" width="520" height="180" aria-label="Diagram of recorded shot positions"></canvas>
         <div id="shotList" class="shot-list"></div>
       </section>
     </main>
@@ -170,8 +169,37 @@
       <div id="allRounds"></div>
     </div>
   </div>
+  <div id="startDialog" class="dialog" role="dialog" aria-modal="true" aria-labelledby="startTitle">
+    <div class="sheet">
+      <div class="sheet-head"><h2 id="startTitle">Start a round</h2><button class="icon-btn close-dialog" style="color:var(--ink);border-color:var(--line)" aria-label="Close">×</button></div>
+      <form id="startForm" class="stack">
+        <div class="field"><label for="courseName">Course</label><input id="courseName" name="courseName" autocomplete="off" placeholder="Course name" required></div>
+        <div class="field"><label>Round length</label><div class="segmented" role="group" aria-label="Round length"><button type="button" class="holes active" data-holes="9">9 holes</button><button type="button" class="holes" data-holes="18">18 holes</button></div></div>
+        <button class="primary" type="submit">Start round</button>
+      </form>
+    </div>
+  </div>
+  <div id="importDialog" class="dialog" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+    <div class="sheet">
+      <div class="sheet-head"><h2 id="importTitle">Add an old round</h2><button class="icon-btn close-dialog" style="color:var(--ink);border-color:var(--line)" aria-label="Close">×</button></div>
+      <form id="importForm" class="stack">
+        <div class="field"><label for="importCourse">Course</label><input id="importCourse" autocomplete="off" placeholder="Course name" required></div>
+        <div class="field"><label for="importDate">Date played</label><input id="importDate" type="date" required></div>
+        <div class="field"><label>Round length</label><div class="segmented" role="group" aria-label="Imported round length"><button type="button" class="import-holes active" data-holes="9">9 holes</button><button type="button" class="import-holes" data-holes="18">18 holes</button></div></div>
+        <div><div class="club-label" style="margin:0 0 9px">Score by hole</div><div id="importScores" class="score-grid"></div></div>
+        <button class="primary" type="submit">Save old round</button>
+      </form>
+    </div>
+  </div>
+  <div id="roundDetailDialog" class="dialog" role="dialog" aria-modal="true" aria-labelledby="roundDetailTitle">
+    <div class="sheet">
+      <div class="sheet-head"><h2 id="roundDetailTitle">Round details</h2><button class="icon-btn close-dialog" style="color:var(--ink);border-color:var(--line)" aria-label="Close">×</button></div>
+      <div id="roundDetail"></div>
+    </div>
+  </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
     import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
@@ -315,6 +343,14 @@
     let watchId = null;
     let wakeLock = null;
     let isSavingRound = false;
+    let importedHoleCount = 9;
+    let detailRoundId = null;
+    let courseMap = null;
+    let currentLocationMarker = null;
+    let accuracyCircle = null;
+    let shotLayer = null;
+    let hasCentredMap = false;
+    let detailMap = null;
 
     const el = id => document.getElementById(id);
 
@@ -362,20 +398,26 @@
       return 6371000 * 2 * Math.atan2(Math.sqrt(value),Math.sqrt(1-value));
     }
 
+    /** Returns a round's total score from recorded shots or manually entered hole scores. */
+    function roundTotal(round) {
+      return round.holes.reduce((total,hole) => total + (Number.isFinite(Number(hole.score)) ? Number(hole.score) : hole.shots.length),0);
+    }
+
     /** Renders the recent and full round-history lists loaded from Firestore. */
     function renderHistory() {
       const saved = getRounds();
       const unfinished = saved.find(round => round.inProgress);
       const rounds = saved.filter(round => round.finishedAt).sort((a,b) => new Date(b.finishedAt)-new Date(a.finishedAt));
       const markup = items => items.length ? items.map(round => {
-        const shots = round.holes.reduce((total,hole) => total + hole.shots.length,0);
-        return `<div class="round-row"><div><strong>${escapeHtml(round.course)}</strong><div class="muted">${formatDate(round.finishedAt)} · ${round.holeCount} holes</div></div><div class="round-score">${shots}</div></div>`;
+        const source = round.source === 'manual' ? ' · Entered manually' : '';
+        return `<button type="button" class="round-row open-round" data-round-id="${round.id}"><div><strong>${escapeHtml(round.course)}</strong><div class="muted">${formatDate(round.finishedAt)} · ${round.holeCount} holes${source}</div></div><div class="round-score">${roundTotal(round)}</div></button>`;
       }).join('') : '<div class="empty">No completed rounds yet.</div>';
-      el('recentRounds').innerHTML = markup(rounds.slice(0,3));
+      el('recentRounds').innerHTML = markup(rounds.slice(0,4));
       el('allRounds').innerHTML = markup(rounds);
       el('resumeRound').innerHTML = unfinished ? `<div class="card" style="margin-top:20px;background:#eaf2df"><div class="eyebrow">Round in progress</div><div class="round-row"><div><strong>${escapeHtml(unfinished.course)}</strong><div class="muted">Hole ${unfinished.currentHole} of ${unfinished.holeCount}</div></div><div class="stack"><button class="secondary" id="resumeButton" type="button">Continue</button><button class="danger-button" id="abandonRoundButton" type="button">Abandon</button></div></div></div>` : '';
       el('resumeButton')?.addEventListener('click',() => resumeRound(unfinished));
       el('abandonRoundButton')?.addEventListener('click',() => abandonRound(unfinished));
+      document.querySelectorAll('.open-round').forEach(button => button.addEventListener('click',() => openRoundDetail(button.dataset.roundId)));
     }
 
     /** Escapes user-entered course names before placing them in HTML. */
@@ -390,6 +432,51 @@
       if (!('wakeLock' in navigator)) return;
       try { wakeLock = await navigator.wakeLock.request('screen'); }
       catch (error) { console.debug('Screen wake lock was not available', error); }
+    }
+
+    /** Creates the satellite map once and reuses it throughout the active round. */
+    function ensureCourseMap() {
+      if (!courseMap) {
+        courseMap = L.map('courseMap',{zoomControl:false,attributionControl:true}).setView([-37.8136,144.9631],16);
+        L.tileLayer('https://api.maptiler.com/tiles/satellite-v4/{z}/{x}/{y}?key=gy9Sj4ylg05JjKYKqr77',{
+          maxZoom:20,
+          attribution:'&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; OpenStreetMap contributors'
+        }).addTo(courseMap);
+        L.control.zoom({position:'topright'}).addTo(courseMap);
+        shotLayer = L.layerGroup().addTo(courseMap);
+      }
+      window.setTimeout(() => courseMap.invalidateSize(),50);
+    }
+
+    /** Updates the blue current-location marker and its GPS accuracy circle. */
+    function updateCurrentLocationOnMap(position) {
+      if (!courseMap) return;
+      const point = [position.latitude,position.longitude];
+      if (!currentLocationMarker) {
+        const icon = L.divIcon({className:'current-pin',iconSize:[18,18]});
+        currentLocationMarker = L.marker(point,{icon,zIndexOffset:1000}).addTo(courseMap).bindTooltip('Current position');
+        accuracyCircle = L.circle(point,{radius:position.accuracy,color:'#2f80ed',weight:1,fillColor:'#2f80ed',fillOpacity:.12}).addTo(courseMap);
+      } else {
+        currentLocationMarker.setLatLng(point);
+        accuracyCircle.setLatLng(point).setRadius(position.accuracy);
+      }
+      if (!hasCentredMap) {
+        courseMap.setView(point,18);
+        hasCentredMap = true;
+      }
+    }
+
+    /** Draws numbered shot positions and the path between them for the current hole. */
+    function renderMapShots(shots) {
+      ensureCourseMap();
+      shotLayer.clearLayers();
+      const points = shots.filter(shot => Number.isFinite(shot.latitude) && Number.isFinite(shot.longitude)).map(shot => [shot.latitude,shot.longitude]);
+      shots.forEach(shot => {
+        if (!Number.isFinite(shot.latitude) || !Number.isFinite(shot.longitude)) return;
+        const icon = L.divIcon({className:'shot-pin',html:String(shot.number),iconSize:[28,28]});
+        L.marker([shot.latitude,shot.longitude],{icon}).bindTooltip(`${shot.club} · shot ${shot.number}`).addTo(shotLayer);
+      });
+      if (points.length > 1) L.polyline(points,{color:'#f4c95d',weight:4,opacity:.95,dashArray:'8 7'}).addTo(shotLayer);
     }
 
     /** Starts continuous foreground GPS updates and reports their accuracy. */
@@ -410,6 +497,7 @@
         const quality = currentPosition.accuracy <= 20 ? 'good' : '';
         updateGpsStatus(`GPS ready · accuracy ±${currentPosition.accuracy} m`,quality);
         el('recordShot').disabled = isSavingRound;
+        updateCurrentLocationOnMap(currentPosition);
       }, error => {
         console.debug('GPS error', error);
         const message = error.code === 1 ? 'Allow location access to record shots.' : 'GPS unavailable. Move outdoors and try again.';
@@ -449,6 +537,8 @@
         return;
       }
       startButton.disabled = false;
+      closeDialog(el('startDialog'));
+      hasCentredMap = false;
       el('startView').classList.add('hidden');
       el('roundView').classList.remove('hidden');
       renderActiveRound();
@@ -459,6 +549,7 @@
     /** Restores an unfinished round after the page or phone has been closed. */
     async function resumeRound(round) {
       activeRound = round;
+      hasCentredMap = false;
       el('startView').classList.add('hidden');
       el('roundView').classList.remove('hidden');
       renderActiveRound();
@@ -483,6 +574,107 @@
         showToast('Round abandoned');
       } catch (error) {
         console.debug('Round could not be abandoned',error);
+        showToast('Round was not deleted. Check your connection.');
+      }
+    }
+
+    /** Opens one of the bottom-sheet dialogs by its element ID. */
+    function openDialog(dialogId) {
+      el(dialogId).classList.add('open');
+    }
+
+    /** Closes a bottom-sheet dialog and releases any detail-map instance it contains. */
+    function closeDialog(dialog) {
+      dialog.classList.remove('open');
+      if (dialog.id === 'roundDetailDialog' && detailMap) {
+        detailMap.remove();
+        detailMap = null;
+      }
+    }
+
+    /** Builds the 9- or 18-hole score fields used to enter a historical scorecard. */
+    function renderImportScores() {
+      el('importScores').innerHTML = Array.from({length:importedHoleCount},(_,index) => `<div class="score-field"><label for="importHole${index+1}">H${index+1}</label><input id="importHole${index+1}" type="number" min="1" max="20" inputmode="numeric" required aria-label="Hole ${index+1} score"></div>`).join('');
+    }
+
+    /** Saves a manually entered historical scorecard without GPS or club information. */
+    async function importHistoricalRound(event) {
+      event.preventDefault();
+      const submitButton = el('importForm').querySelector('button[type="submit"]');
+      if (submitButton.disabled) return;
+      const scores = Array.from({length:importedHoleCount},(_,index) => Number(el(`importHole${index+1}`).value));
+      if (scores.some(score => !Number.isInteger(score) || score < 1 || score > 20)) {
+        showToast('Enter a score from 1 to 20 for every hole.');
+        return;
+      }
+      const playedAt = new Date(`${el('importDate').value}T12:00:00`).toISOString();
+      const historicalRound = {
+        id:crypto.randomUUID(),
+        course:el('importCourse').value.trim(),
+        holeCount:importedHoleCount,
+        currentHole:importedHoleCount,
+        startedAt:playedAt,
+        finishedAt:playedAt,
+        inProgress:false,
+        source:'manual',
+        holes:scores.map((score,index) => ({number:index+1,score,shots:[]}))
+      };
+      submitButton.disabled = true;
+      try {
+        await saveRound(historicalRound);
+        closeDialog(el('importDialog'));
+        el('importForm').reset();
+        importedHoleCount = 9;
+        renderImportScores();
+        renderHistory();
+        showToast('Old round added');
+      } catch (error) {
+        console.debug('Historical round could not be saved',error);
+        showToast('Round not saved. Check your connection.');
+      } finally {
+        submitButton.disabled = false;
+      }
+    }
+
+    /** Opens a completed round with per-hole scores and any available GPS shot map. */
+    function openRoundDetail(roundId) {
+      const round = getRounds().find(item => item.id === roundId);
+      if (!round) return;
+      detailRoundId = roundId;
+      const source = round.source === 'manual' ? 'Entered manually' : 'GPS round';
+      const holeMarkup = round.holes.map(hole => `<div class="detail-hole"><small>H${hole.number}</small><strong>${Number.isFinite(Number(hole.score)) ? hole.score : hole.shots.length}</strong></div>`).join('');
+      const allShots = round.holes.flatMap(hole => hole.shots.map(shot => ({...shot,holeNumber:hole.number})));
+      el('roundDetail').innerHTML = `<div class="eyebrow">${source}</div><h1 style="font-size:1.8rem;margin-bottom:5px">${escapeHtml(round.course)}</h1><p class="muted">${formatDate(round.finishedAt)} · ${round.holeCount} holes</p><div class="detail-score">${holeMarkup}</div><div style="display:flex;justify-content:space-between;align-items:center;margin:14px 0"><strong>Total score</strong><span class="round-score">${roundTotal(round)}</span></div>${allShots.length ? '<div id="detailMap" class="detail-map" aria-label="Map of shots from this round"></div>' : ''}<button id="deleteCompletedRound" class="danger-button" type="button" style="width:100%">Delete round</button>`;
+      openDialog('roundDetailDialog');
+      el('deleteCompletedRound').addEventListener('click',deleteCompletedRound);
+      if (!allShots.length) return;
+      window.setTimeout(() => {
+        detailMap = L.map('detailMap').setView([allShots[0].latitude,allShots[0].longitude],16);
+        L.tileLayer('https://api.maptiler.com/tiles/satellite-v4/{z}/{x}/{y}?key=gy9Sj4ylg05JjKYKqr77',{maxZoom:20,attribution:'&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; OpenStreetMap contributors'}).addTo(detailMap);
+        round.holes.forEach(hole => {
+          const points = hole.shots.map(shot => [shot.latitude,shot.longitude]);
+          hole.shots.forEach(shot => {
+            const icon = L.divIcon({className:'shot-pin',html:String(shot.number),iconSize:[28,28]});
+            L.marker([shot.latitude,shot.longitude],{icon}).bindTooltip(`Hole ${hole.number} · ${shot.club} · shot ${shot.number}`).addTo(detailMap);
+          });
+          if (points.length > 1) L.polyline(points,{color:'#f4c95d',weight:4,dashArray:'8 7'}).addTo(detailMap);
+        });
+        detailMap.fitBounds(L.latLngBounds(allShots.map(shot => [shot.latitude,shot.longitude])).pad(.2),{maxZoom:19});
+      },50);
+    }
+
+    /** Permanently deletes the completed round currently open in the detail sheet. */
+    async function deleteCompletedRound() {
+      const round = getRounds().find(item => item.id === detailRoundId);
+      if (!round || !window.confirm(`Delete the round at ${round.course}? This cannot be undone.`)) return;
+      try {
+        await window.haggisDeleteRound(round.id);
+        window.haggisRounds = getRounds().filter(item => item.id !== round.id);
+        closeDialog(el('roundDetailDialog'));
+        renderHistory();
+        showToast('Round deleted');
+      } catch (error) {
+        console.debug('Completed round could not be deleted',error);
         showToast('Round was not deleted. Check your connection.');
       }
     }
@@ -568,25 +760,6 @@
       }
     }
 
-    /** Draws a simple relative plot of shot positions without sending coordinates to a map provider. */
-    function drawShotMap(shots) {
-      const canvas = el('shotMap');
-      const context = canvas.getContext('2d');
-      const ratio = window.devicePixelRatio || 1;
-      const width = canvas.clientWidth || 520;
-      const height = 180;
-      canvas.width = width * ratio; canvas.height = height * ratio;
-      context.scale(ratio,ratio); context.clearRect(0,0,width,height);
-      context.fillStyle='#6b786f'; context.font='14px system-ui';
-      if (!shots.length) { context.textAlign='center'; context.fillText('Shot positions will appear here',width/2,94); return; }
-      const latitudes=shots.map(s=>s.latitude), longitudes=shots.map(s=>s.longitude);
-      const minLat=Math.min(...latitudes), maxLat=Math.max(...latitudes), minLon=Math.min(...longitudes), maxLon=Math.max(...longitudes);
-      const padding=26, spanLat=maxLat-minLat||.00001, spanLon=maxLon-minLon||.00001;
-      const points=shots.map(s=>({x:padding+(s.longitude-minLon)/spanLon*(width-padding*2),y:height-padding-(s.latitude-minLat)/spanLat*(height-padding*2)}));
-      if(points.length>1){context.beginPath();context.moveTo(points[0].x,points[0].y);points.slice(1).forEach(p=>context.lineTo(p.x,p.y));context.strokeStyle='#1e5c3f';context.lineWidth=3;context.setLineDash([6,6]);context.stroke();context.setLineDash([]);}
-      points.forEach((point,index)=>{context.beginPath();context.arc(point.x,point.y,12,0,Math.PI*2);context.fillStyle=index===points.length-1?'#f4c95d':'#123f2b';context.fill();context.fillStyle=index===points.length-1?'#123f2b':'#fff';context.textAlign='center';context.textBaseline='middle';context.font='bold 11px system-ui';context.fillText(String(index+1),point.x,point.y);});
-    }
-
     /** Refreshes every value and control on the active-round screen. */
     function renderActiveRound() {
       const hole = activeRound.holes[activeRound.currentHole-1];
@@ -602,25 +775,35 @@
         return `<div class="shot"><span class="shot-num">${shot.number}</span><div><strong>${shot.club}</strong><small>GPS ±${shot.accuracy} m</small></div><strong>${distance}</strong></div>`;
       }).join('');
       renderClubs();
-      drawShotMap(hole.shots);
+      renderMapShots(hole.shots);
     }
 
     document.querySelectorAll('.holes').forEach(button => button.addEventListener('click',() => {
       selectedHoles = Number(button.dataset.holes);
       document.querySelectorAll('.holes').forEach(item => item.classList.toggle('active',item===button));
     }));
+    document.querySelectorAll('.import-holes').forEach(button => button.addEventListener('click',() => {
+      importedHoleCount = Number(button.dataset.holes);
+      document.querySelectorAll('.import-holes').forEach(item => item.classList.toggle('active',item===button));
+      renderImportScores();
+    }));
     el('startForm').addEventListener('submit',event => { event.preventDefault(); startRound(el('courseName').value.trim(),selectedHoles); });
+    el('importForm').addEventListener('submit',importHistoricalRound);
+    el('openStartRound').addEventListener('click',() => { openDialog('startDialog'); window.setTimeout(() => el('courseName').focus(),50); });
+    el('openImportRound').addEventListener('click',() => { el('importDate').value = new Date().toISOString().slice(0,10); openDialog('importDialog'); window.setTimeout(() => el('importCourse').focus(),50); });
     el('recordShot').addEventListener('click',recordShot);
     el('undoShot').addEventListener('click',undoShot);
     el('nextHole').addEventListener('click',advanceHole);
     el('abandonActiveRound').addEventListener('click',() => abandonRound(activeRound));
     [el('historyButton'),el('viewAllButton')].forEach(button=>button.addEventListener('click',()=>{el('historyDialog').classList.add('open');renderHistory();}));
-    el('closeHistory').addEventListener('click',()=>el('historyDialog').classList.remove('open'));
-    el('historyDialog').addEventListener('click',event=>{if(event.target===el('historyDialog'))el('historyDialog').classList.remove('open');});
+    document.querySelectorAll('.close-dialog').forEach(button => button.addEventListener('click',() => closeDialog(button.closest('.dialog'))));
+    el('closeHistory').addEventListener('click',()=>closeDialog(el('historyDialog')));
+    document.querySelectorAll('.dialog').forEach(dialog => dialog.addEventListener('click',event => { if (event.target === dialog) closeDialog(dialog); }));
     document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&activeRound)requestWakeLock();});
-    window.addEventListener('resize',()=>{if(activeRound)drawShotMap(activeRound.holes[activeRound.currentHole-1].shots);});
+    window.addEventListener('resize',()=>courseMap?.invalidateSize());
 
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js').catch(error => console.debug('Offline setup unavailable',error));
+    renderImportScores();
     renderHistory();
   </script>
 </body>
