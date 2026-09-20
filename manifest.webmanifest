@@ -1,6 +1,6 @@
 {
-  "name": "PinDrop Golf",
-  "short_name": "PinDrop",
+  "name": "Haggis Golf",
+  "short_name": "Haggis Golf",
   "description": "Private golf score and GPS shot tracker.",
   "start_url": "./",
   "display": "standalone",
