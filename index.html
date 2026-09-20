@@ -173,6 +173,7 @@
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
     import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
+    import { collection, doc, getDocs, getFirestore, setDoc } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 
     const firebaseConfig = {
       apiKey: 'AIzaSyC2UlqtyxFLU3jiOzZtGQgtbjfX4V3IH3M',
@@ -185,10 +186,65 @@
 
     const firebaseApp = initializeApp(firebaseConfig);
     const auth = getAuth(firebaseApp);
+    const database = getFirestore(firebaseApp);
     const provider = new GoogleAuthProvider();
+    const AUTHORISED_UID = 'kT7Q1GEy3tU1gyifTY98ys4Ew3c2';
+
+    /** Returns a consistent timestamp for comparing local and cloud copies of a round. */
+    function roundTimestamp(round) {
+      return new Date(round.updatedAt || round.finishedAt || round.startedAt || 0).getTime();
+    }
+
+    /** Updates the small cloud-status message shown on the signed-in account card. */
+    function updateCloudStatus(message) {
+      const status = document.getElementById('cloudStatus');
+      if (status) status.textContent = message;
+    }
+
+    /** Writes one changed round to the authenticated user's private Firestore collection. */
+    window.haggisSaveRound = async round => {
+      const user = auth.currentUser;
+      if (!user || user.uid !== AUTHORISED_UID || !round?.id) throw new Error('An authorised sign-in is required.');
+      updateCloudStatus('Saving to cloud…');
+      const safeRound = JSON.parse(JSON.stringify(round));
+      await setDoc(doc(database,'users',user.uid,'rounds',round.id),safeRound);
+      updateCloudStatus('All changes saved in the cloud');
+      return safeRound;
+    };
+
+    /** Loads cloud rounds and performs a one-time migration of legacy browser rounds. */
+    async function loadRoundHistory(user) {
+      updateCloudStatus('Loading rounds…');
+      try {
+        const snapshot = await getDocs(collection(database,'users',user.uid,'rounds'));
+        const merged = new Map(snapshot.docs.map(item => [item.id,{...item.data(),id:item.id}]));
+        let legacyRounds = [];
+        try { legacyRounds = JSON.parse(localStorage.getItem('pindrop-golf-rounds-v1') || '[]'); }
+        catch (error) { console.debug('Legacy round migration data was invalid',error); }
+        legacyRounds.forEach(localRound => {
+          const cloudRound = merged.get(localRound.id);
+          if (!cloudRound || roundTimestamp(localRound) >= roundTimestamp(cloudRound)) {
+            merged.set(localRound.id,localRound.updatedAt ? localRound : {...localRound,updatedAt:new Date().toISOString()});
+          }
+        });
+        const rounds = [...merged.values()].sort((a,b) => roundTimestamp(b)-roundTimestamp(a));
+        await Promise.all(rounds.map(round => setDoc(doc(database,'users',user.uid,'rounds',round.id),JSON.parse(JSON.stringify(round)))));
+        localStorage.removeItem('pindrop-golf-rounds-v1');
+        window.haggisRounds = rounds;
+        window.renderHistory();
+        updateCloudStatus('All changes saved in the cloud');
+      } catch (error) {
+        console.debug('Cloud round history could not be loaded',error);
+        updateCloudStatus('Cloud unavailable · refresh to try again');
+      }
+    }
 
     /** Opens Google authentication and falls back to a full-page redirect when a popup is unavailable. */
     async function authenticateWithGoogle() {
+      if (auth.currentUser) {
+        await signOut(auth);
+        return;
+      }
       document.getElementById('authMessage').textContent = 'Opening Google sign-in…';
       try {
         await signInWithPopup(auth,provider);
@@ -211,17 +267,26 @@
         authView.classList.remove('hidden');
         startView.classList.add('hidden');
         historyButton.classList.add('hidden');
+        document.getElementById('googleSignIn').textContent = 'Sign in with Google';
         document.getElementById('authMessage').textContent = 'Your golf data is available only after sign-in.';
+        return;
+      }
+      if (user.uid !== AUTHORISED_UID) {
+        authView.classList.remove('hidden');
+        startView.classList.add('hidden');
+        historyButton.classList.add('hidden');
+        document.getElementById('googleSignIn').textContent = 'Sign out';
+        document.getElementById('authMessage').textContent = `This account is not authorised. Firebase UID: ${user.uid}`;
         return;
       }
       authView.classList.add('hidden');
       startView.classList.remove('hidden');
       historyButton.classList.remove('hidden');
-      document.getElementById('accountCard').innerHTML = '<div class="round-row"><div><strong id="accountName"></strong><div id="accountEmail" class="muted"></div><div class="muted" style="margin-top:7px;font-size:.75rem;overflow-wrap:anywhere">Firebase UID: <strong id="accountUid"></strong></div></div><button id="signOutButton" class="secondary" type="button">Sign out</button></div>';
+      document.getElementById('accountCard').innerHTML = '<div class="round-row"><div><strong id="accountName"></strong><div id="accountEmail" class="muted"></div><div id="cloudStatus" class="muted" style="margin-top:7px;font-size:.8rem">Preparing cloud sync…</div></div><button id="signOutButton" class="secondary" type="button">Sign out</button></div>';
       document.getElementById('accountName').textContent = user.displayName || 'Signed in';
       document.getElementById('accountEmail').textContent = user.email || '';
-      document.getElementById('accountUid').textContent = user.uid;
       document.getElementById('signOutButton').addEventListener('click',() => signOut(auth));
+      loadRoundHistory(user);
     }
 
     document.getElementById('googleSignIn').addEventListener('click',authenticateWithGoogle);
@@ -230,25 +295,36 @@
 
   <script>
     const CLUBS = ['Dr','3W','5W','7W','4H','5i','6i','7i','8i','9i','PW','GW','SW','Putter'];
-    const STORAGE_KEY = 'pindrop-golf-rounds-v1';
+    window.haggisRounds = window.haggisRounds || [];
     let selectedHoles = 9;
     let selectedClub = localStorage.getItem('pindrop-last-club') || 'Dr';
     let activeRound = null;
     let currentPosition = null;
     let watchId = null;
     let wakeLock = null;
+    let isSavingRound = false;
 
     const el = id => document.getElementById(id);
 
-    /** Returns all saved rounds from this device, safely handling invalid stored data. */
+    /** Returns the authenticated user's rounds loaded from Firestore. */
     function getRounds() {
-      try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
-      catch (error) { console.debug('Could not read saved rounds', error); return []; }
+      return window.haggisRounds;
     }
 
-    /** Persists the current round list on this device. */
-    function saveRounds(rounds) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(rounds));
+    /** Saves one round to Firestore and updates the in-memory history after confirmation. */
+    async function saveRound(round) {
+      const preparedRound = {...round,updatedAt:new Date().toISOString()};
+      const savedRound = await window.haggisSaveRound(preparedRound);
+      window.haggisRounds = [savedRound,...getRounds().filter(item => item.id !== savedRound.id)];
+      return savedRound;
+    }
+
+    /** Prevents competing round changes while a Firestore save is running. */
+    function setRoundSaving(saving) {
+      isSavingRound = saving;
+      el('recordShot').disabled = saving || !currentPosition;
+      el('undoShot').disabled = saving;
+      el('nextHole').disabled = saving;
     }
 
     /** Displays brief, accessible feedback after an action. */
@@ -274,7 +350,7 @@
       return 6371000 * 2 * Math.atan2(Math.sqrt(value),Math.sqrt(1-value));
     }
 
-    /** Renders the recent and full round-history lists from local storage. */
+    /** Renders the recent and full round-history lists loaded from Firestore. */
     function renderHistory() {
       const saved = getRounds();
       const unfinished = saved.find(round => round.inProgress);
@@ -320,7 +396,7 @@
         };
         const quality = currentPosition.accuracy <= 20 ? 'good' : '';
         updateGpsStatus(`GPS ready · accuracy ±${currentPosition.accuracy} m`,quality);
-        el('recordShot').disabled = false;
+        el('recordShot').disabled = isSavingRound;
       }, error => {
         console.debug('GPS error', error);
         const message = error.code === 1 ? 'Allow location access to record shots.' : 'GPS unavailable. Move outdoors and try again.';
@@ -345,11 +421,21 @@
       }));
     }
 
-    /** Starts a new local round and opens the shot-recording screen. */
+    /** Saves a new cloud round before opening the shot-recording screen. */
     async function startRound(course,holeCount) {
-      activeRound = { id:crypto.randomUUID(),course,holeCount,currentHole:1,startedAt:new Date().toISOString(),finishedAt:null,holes:Array.from({length:holeCount},(_,index)=>({number:index+1,shots:[]})) };
-      const rounds = getRounds().filter(round => !round.inProgress);
-      saveRounds([{...activeRound,inProgress:true},...rounds]);
+      const startButton = el('startForm').querySelector('button[type="submit"]');
+      if (startButton.disabled) return;
+      startButton.disabled = true;
+      const newRound = { id:crypto.randomUUID(),course,holeCount,currentHole:1,startedAt:new Date().toISOString(),finishedAt:null,inProgress:true,holes:Array.from({length:holeCount},(_,index)=>({number:index+1,shots:[]})) };
+      try {
+        activeRound = await saveRound(newRound);
+      } catch (error) {
+        console.debug('New round could not be saved',error);
+        showToast('Could not start the round. Check your connection.');
+        startButton.disabled = false;
+        return;
+      }
+      startButton.disabled = false;
       el('startView').classList.add('hidden');
       el('roundView').classList.remove('hidden');
       renderActiveRound();
@@ -367,53 +453,85 @@
       startGps();
     }
 
-    /** Saves an updated copy of the active round for crash and refresh recovery. */
-    function persistActiveRound() {
-      const rounds = getRounds().filter(round => !(round.inProgress && round.id===activeRound.id));
-      saveRounds([{...activeRound,inProgress:true},...rounds]);
+    /** Saves an updated active round and returns the confirmed cloud copy. */
+    async function persistActiveRound(round) {
+      return saveRound({...round,inProgress:true});
     }
 
-    /** Records the chosen club, location and time as the next shot on this hole. */
-    function recordShot() {
+    /** Records a shot only after Firestore confirms its club, location and time. */
+    async function recordShot() {
       if (!currentPosition) { showToast('Waiting for a GPS position'); return; }
-      const hole = activeRound.holes[activeRound.currentHole-1];
+      if (isSavingRound) return;
+      const candidate = JSON.parse(JSON.stringify(activeRound));
+      const hole = candidate.holes[candidate.currentHole-1];
       hole.shots.push({number:hole.shots.length+1,club:selectedClub,...currentPosition,recordedAt:new Date().toISOString()});
-      persistActiveRound();
-      renderActiveRound();
-      navigator.vibrate?.(45);
-      showToast(`Shot ${hole.shots.length} recorded with ${selectedClub}`);
+      setRoundSaving(true);
+      try {
+        activeRound = await persistActiveRound(candidate);
+        renderActiveRound();
+        navigator.vibrate?.(45);
+        showToast(`Shot ${hole.shots.length} recorded with ${selectedClub}`);
+      } catch (error) {
+        console.debug('Shot could not be saved',error);
+        showToast('Shot not recorded. Check your connection and retry.');
+      } finally {
+        setRoundSaving(false);
+      }
     }
 
-    /** Removes the most recently recorded shot from the current hole. */
-    function undoShot() {
-      const shots = activeRound.holes[activeRound.currentHole-1].shots;
+    /** Removes the most recent shot only after Firestore confirms the change. */
+    async function undoShot() {
+      if (isSavingRound) return;
+      const candidate = JSON.parse(JSON.stringify(activeRound));
+      const shots = candidate.holes[candidate.currentHole-1].shots;
       if (!shots.length) { showToast('No shot to undo'); return; }
       shots.pop();
-      persistActiveRound();
-      renderActiveRound();
-      showToast('Last shot removed');
+      setRoundSaving(true);
+      try {
+        activeRound = await persistActiveRound(candidate);
+        renderActiveRound();
+        showToast('Last shot removed');
+      } catch (error) {
+        console.debug('Shot removal could not be saved',error);
+        showToast('Shot was not removed. Check your connection.');
+      } finally {
+        setRoundSaving(false);
+      }
     }
 
-    /** Moves to the next hole or completes and archives the round. */
-    function advanceHole() {
-      if (activeRound.currentHole < activeRound.holeCount) {
-        activeRound.currentHole += 1;
-        selectedClub = 'Dr';
-        persistActiveRound();
-        renderActiveRound();
-        window.scrollTo({top:0,behavior:'smooth'});
-        return;
+    /** Moves holes or completes the round only after Firestore confirms the change. */
+    async function advanceHole() {
+      if (isSavingRound) return;
+      const candidate = JSON.parse(JSON.stringify(activeRound));
+      const isFinalHole = candidate.currentHole === candidate.holeCount;
+      if (isFinalHole) {
+        candidate.finishedAt = new Date().toISOString();
+        candidate.inProgress = false;
+      } else {
+        candidate.currentHole += 1;
       }
-      const finished = {...activeRound,finishedAt:new Date().toISOString(),inProgress:false};
-      const rounds = getRounds().filter(round => round.id !== activeRound.id);
-      saveRounds([finished,...rounds]);
-      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-      wakeLock?.release();
-      activeRound = null;
-      el('roundView').classList.add('hidden');
-      el('startView').classList.remove('hidden');
-      renderHistory();
-      showToast('Round saved');
+      setRoundSaving(true);
+      try {
+        activeRound = await saveRound(candidate);
+        if (!isFinalHole) {
+          selectedClub = 'Dr';
+          renderActiveRound();
+          window.scrollTo({top:0,behavior:'smooth'});
+          return;
+        }
+        if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+        wakeLock?.release();
+        activeRound = null;
+        el('roundView').classList.add('hidden');
+        el('startView').classList.remove('hidden');
+        renderHistory();
+        showToast('Round saved');
+      } catch (error) {
+        console.debug('Hole change could not be saved',error);
+        showToast('Change not saved. Check your connection and retry.');
+      } finally {
+        setRoundSaving(false);
+      }
     }
 
     /** Draws a simple relative plot of shot positions without sending coordinates to a map provider. */
