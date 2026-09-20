@@ -42,6 +42,7 @@
     .primary { width:100%; min-height:56px; border:0; border-radius:15px; color:#fff; background:var(--forest); font-weight:850; box-shadow:0 7px 18px rgb(18 63 43 / .22); }
     .secondary { min-height:46px; padding:0 16px; border:1px solid var(--line); border-radius:12px; color:var(--forest); background:#fff; font-weight:750; }
     .text-button { border:0; color:var(--forest-2); background:transparent; font-weight:750; text-decoration:underline; text-underline-offset:3px; }
+    .danger-button { min-height:46px; padding:0 14px; border:1px solid #e1b9ba; border-radius:12px; color:var(--danger); background:#fff; font-weight:750; }
     .history-head { display:flex; justify-content:space-between; align-items:end; margin:28px 2px 10px; }
     .round-row { display:grid; grid-template-columns:1fr auto; gap:10px; padding:14px 0; border-bottom:1px solid var(--line); }
     .round-row:last-child { border:0; }
@@ -155,6 +156,7 @@
           <button id="undoShot" class="secondary" type="button">Undo shot</button>
           <button id="nextHole" class="next" type="button">Next hole →</button>
         </div>
+        <button id="abandonActiveRound" class="text-button" type="button" style="display:block;margin:18px auto 0;color:var(--danger)">Abandon round</button>
 
         <canvas id="shotMap" class="mini-map" width="520" height="180" aria-label="Diagram of recorded shot positions"></canvas>
         <div id="shotList" class="shot-list"></div>
@@ -173,7 +175,7 @@
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
     import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
-    import { collection, doc, getDocs, getFirestore, setDoc } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
+    import { collection, deleteDoc, doc, getDocs, getFirestore, onSnapshot, setDoc } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js';
 
     const firebaseConfig = {
       apiKey: 'AIzaSyC2UlqtyxFLU3jiOzZtGQgtbjfX4V3IH3M',
@@ -189,6 +191,7 @@
     const database = getFirestore(firebaseApp);
     const provider = new GoogleAuthProvider();
     const AUTHORISED_UID = 'kT7Q1GEy3tU1gyifTY98ys4Ew3c2';
+    let stopRoundListener = null;
 
     /** Returns a consistent timestamp for comparing local and cloud copies of a round. */
     function roundTimestamp(round) {
@@ -212,27 +215,33 @@
       return safeRound;
     };
 
-    /** Loads cloud rounds and performs a one-time migration of legacy browser rounds. */
+    /** Permanently deletes one round from the authenticated user's Firestore collection. */
+    window.haggisDeleteRound = async roundId => {
+      const user = auth.currentUser;
+      if (!user || user.uid !== AUTHORISED_UID || !roundId) throw new Error('An authorised sign-in is required.');
+      updateCloudStatus('Deleting round…');
+      await deleteDoc(doc(database,'users',user.uid,'rounds',roundId));
+      updateCloudStatus('All changes saved in the cloud');
+    };
+
+    /** Loads cloud rounds, removes legacy score storage and listens for cross-device changes. */
     async function loadRoundHistory(user) {
       updateCloudStatus('Loading rounds…');
       try {
-        const snapshot = await getDocs(collection(database,'users',user.uid,'rounds'));
-        const merged = new Map(snapshot.docs.map(item => [item.id,{...item.data(),id:item.id}]));
-        let legacyRounds = [];
-        try { legacyRounds = JSON.parse(localStorage.getItem('pindrop-golf-rounds-v1') || '[]'); }
-        catch (error) { console.debug('Legacy round migration data was invalid',error); }
-        legacyRounds.forEach(localRound => {
-          const cloudRound = merged.get(localRound.id);
-          if (!cloudRound || roundTimestamp(localRound) >= roundTimestamp(cloudRound)) {
-            merged.set(localRound.id,localRound.updatedAt ? localRound : {...localRound,updatedAt:new Date().toISOString()});
-          }
-        });
-        const rounds = [...merged.values()].sort((a,b) => roundTimestamp(b)-roundTimestamp(a));
-        await Promise.all(rounds.map(round => setDoc(doc(database,'users',user.uid,'rounds',round.id),JSON.parse(JSON.stringify(round)))));
         localStorage.removeItem('pindrop-golf-rounds-v1');
+        const snapshot = await getDocs(collection(database,'users',user.uid,'rounds'));
+        const rounds = snapshot.docs.map(item => ({...item.data(),id:item.id})).sort((a,b) => roundTimestamp(b)-roundTimestamp(a));
         window.haggisRounds = rounds;
         window.renderHistory();
         updateCloudStatus('All changes saved in the cloud');
+        stopRoundListener?.();
+        stopRoundListener = onSnapshot(collection(database,'users',user.uid,'rounds'),liveSnapshot => {
+          window.haggisRounds = liveSnapshot.docs.map(item => ({...item.data(),id:item.id})).sort((a,b) => roundTimestamp(b)-roundTimestamp(a));
+          window.renderHistory();
+        },error => {
+          console.debug('Live round updates stopped',error);
+          updateCloudStatus('Live updates unavailable · refresh to retry');
+        });
       } catch (error) {
         console.debug('Cloud round history could not be loaded',error);
         updateCloudStatus('Cloud unavailable · refresh to try again');
@@ -264,6 +273,9 @@
       const startView = document.getElementById('startView');
       const historyButton = document.getElementById('historyButton');
       if (!user) {
+        stopRoundListener?.();
+        stopRoundListener = null;
+        window.haggisRounds = [];
         authView.classList.remove('hidden');
         startView.classList.add('hidden');
         historyButton.classList.add('hidden');
@@ -361,8 +373,9 @@
       }).join('') : '<div class="empty">No completed rounds yet.</div>';
       el('recentRounds').innerHTML = markup(rounds.slice(0,3));
       el('allRounds').innerHTML = markup(rounds);
-      el('resumeRound').innerHTML = unfinished ? `<div class="card" style="margin-top:20px;background:#eaf2df"><div class="eyebrow">Round in progress</div><div class="round-row"><div><strong>${escapeHtml(unfinished.course)}</strong><div class="muted">Hole ${unfinished.currentHole} of ${unfinished.holeCount}</div></div><button class="secondary" id="resumeButton" type="button">Continue</button></div></div>` : '';
+      el('resumeRound').innerHTML = unfinished ? `<div class="card" style="margin-top:20px;background:#eaf2df"><div class="eyebrow">Round in progress</div><div class="round-row"><div><strong>${escapeHtml(unfinished.course)}</strong><div class="muted">Hole ${unfinished.currentHole} of ${unfinished.holeCount}</div></div><div class="stack"><button class="secondary" id="resumeButton" type="button">Continue</button><button class="danger-button" id="abandonRoundButton" type="button">Abandon</button></div></div></div>` : '';
       el('resumeButton')?.addEventListener('click',() => resumeRound(unfinished));
+      el('abandonRoundButton')?.addEventListener('click',() => abandonRound(unfinished));
     }
 
     /** Escapes user-entered course names before placing them in HTML. */
@@ -451,6 +464,27 @@
       renderActiveRound();
       await requestWakeLock();
       startGps();
+    }
+
+    /** Deletes an unfinished round after explicit confirmation and returns to the start screen. */
+    async function abandonRound(round) {
+      if (!round || !window.confirm(`Abandon the round at ${round.course}? This cannot be undone.`)) return;
+      try {
+        await window.haggisDeleteRound(round.id);
+        window.haggisRounds = getRounds().filter(item => item.id !== round.id);
+        if (activeRound?.id === round.id) {
+          if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+          wakeLock?.release();
+          activeRound = null;
+          el('roundView').classList.add('hidden');
+          el('startView').classList.remove('hidden');
+        }
+        renderHistory();
+        showToast('Round abandoned');
+      } catch (error) {
+        console.debug('Round could not be abandoned',error);
+        showToast('Round was not deleted. Check your connection.');
+      }
     }
 
     /** Saves an updated active round and returns the confirmed cloud copy. */
@@ -579,6 +613,7 @@
     el('recordShot').addEventListener('click',recordShot);
     el('undoShot').addEventListener('click',undoShot);
     el('nextHole').addEventListener('click',advanceHole);
+    el('abandonActiveRound').addEventListener('click',() => abandonRound(activeRound));
     [el('historyButton'),el('viewAllButton')].forEach(button=>button.addEventListener('click',()=>{el('historyDialog').classList.add('open');renderHistory();}));
     el('closeHistory').addEventListener('click',()=>el('historyDialog').classList.remove('open'));
     el('historyDialog').addEventListener('click',event=>{if(event.target===el('historyDialog'))el('historyDialog').classList.remove('open');});
