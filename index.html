@@ -434,14 +434,36 @@
       catch (error) { console.debug('Screen wake lock was not available', error); }
     }
 
+    /** Adds MapTiler satellite imagery, falling back to OpenStreetMap if it cannot be delivered. */
+    function addBaseMap(map) {
+      const satellite = L.tileLayer('https://api.maptiler.com/maps/satellite/{z}/{x}/{y}.jpg?key=gy9Sj4ylg05JjKYKqr77',{
+        tileSize:512,
+        zoomOffset:-1,
+        minZoom:1,
+        maxZoom:20,
+        crossOrigin:true,
+        attribution:'&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; OpenStreetMap contributors'
+      }).addTo(map);
+      let fallbackAdded = false;
+      satellite.on('tileerror',() => {
+        if (fallbackAdded) return;
+        fallbackAdded = true;
+        map.removeLayer(satellite);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
+          maxZoom:19,
+          crossOrigin:true,
+          attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+        }).addTo(map);
+        showToast('Satellite imagery unavailable — showing street map');
+      });
+      return satellite;
+    }
+
     /** Creates the satellite map once and reuses it throughout the active round. */
     function ensureCourseMap() {
       if (!courseMap) {
         courseMap = L.map('courseMap',{zoomControl:false,attributionControl:true}).setView([-37.8136,144.9631],16);
-        L.tileLayer('https://api.maptiler.com/tiles/satellite-v4/{z}/{x}/{y}?key=gy9Sj4ylg05JjKYKqr77',{
-          maxZoom:20,
-          attribution:'&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; OpenStreetMap contributors'
-        }).addTo(courseMap);
+        addBaseMap(courseMap);
         L.control.zoom({position:'topright'}).addTo(courseMap);
         shotLayer = L.layerGroup().addTo(courseMap);
       }
@@ -650,7 +672,7 @@
       if (!allShots.length) return;
       window.setTimeout(() => {
         detailMap = L.map('detailMap').setView([allShots[0].latitude,allShots[0].longitude],16);
-        L.tileLayer('https://api.maptiler.com/tiles/satellite-v4/{z}/{x}/{y}?key=gy9Sj4ylg05JjKYKqr77',{maxZoom:20,attribution:'&copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a> &copy; OpenStreetMap contributors'}).addTo(detailMap);
+        addBaseMap(detailMap);
         round.holes.forEach(hole => {
           const points = hole.shots.map(shot => [shot.latitude,shot.longitude]);
           hole.shots.forEach(shot => {
