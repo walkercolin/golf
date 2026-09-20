@@ -89,14 +89,27 @@
   <div class="app">
     <header class="topbar">
       <div class="brand"><span class="flag" aria-hidden="true"></span>Haggis Golf</div>
-      <button id="historyButton" class="icon-btn" aria-label="Round history" title="Round history">↻</button>
+      <button id="historyButton" class="icon-btn hidden" aria-label="Round history" title="Round history">↻</button>
     </header>
 
     <main>
-      <section id="startView">
+      <section id="authView" class="card stack" style="margin-top:8vh;text-align:center">
+        <div class="flag" aria-hidden="true" style="margin:0 auto;transform:scale(1.5)"></div>
+        <div>
+          <div class="eyebrow">Private golf tracker</div>
+          <h1 style="font-size:2.2rem">Haggis Golf</h1>
+          <p class="muted">Sign in with your authorised Google account.</p>
+        </div>
+        <button id="googleSignIn" class="primary" type="button">Sign in with Google</button>
+        <p id="authMessage" class="muted" role="status" aria-live="polite">Checking sign-in…</p>
+      </section>
+
+      <section id="startView" class="hidden">
         <div class="eyebrow">Your pocket scorecard</div>
         <h1>Play the course.<br>Keep every shot.</h1>
         <p class="muted">Start a round, choose your club and tap once from where you hit.</p>
+
+        <div id="accountCard" class="card" style="margin-top:20px"></div>
 
         <div id="resumeRound"></div>
 
@@ -156,6 +169,64 @@
     </div>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
+    import { getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
+
+    const firebaseConfig = {
+      apiKey: 'AIzaSyC2UlqtyxFLU3jiOzZtGQgtbjfX4V3IH3M',
+      authDomain: 'haggis-golf.firebaseapp.com',
+      projectId: 'haggis-golf',
+      storageBucket: 'haggis-golf.firebasestorage.app',
+      messagingSenderId: '755848755956',
+      appId: '1:755848755956:web:70649b37909c1125e43ca1'
+    };
+
+    const firebaseApp = initializeApp(firebaseConfig);
+    const auth = getAuth(firebaseApp);
+    const provider = new GoogleAuthProvider();
+
+    /** Opens Google authentication and falls back to a full-page redirect when a popup is unavailable. */
+    async function authenticateWithGoogle() {
+      document.getElementById('authMessage').textContent = 'Opening Google sign-in…';
+      try {
+        await signInWithPopup(auth,provider);
+      } catch (error) {
+        console.debug('Google popup sign-in was unavailable',error);
+        if (['auth/popup-blocked','auth/cancelled-popup-request','auth/web-storage-unsupported'].includes(error.code)) {
+          await signInWithRedirect(auth,provider);
+          return;
+        }
+        document.getElementById('authMessage').textContent = error.code === 'auth/popup-closed-by-user' ? 'Sign-in was cancelled.' : 'Google sign-in failed. Please try again.';
+      }
+    }
+
+    /** Shows the golf application only after Firebase has authenticated the visitor. */
+    function renderAuthenticationState(user) {
+      const authView = document.getElementById('authView');
+      const startView = document.getElementById('startView');
+      const historyButton = document.getElementById('historyButton');
+      if (!user) {
+        authView.classList.remove('hidden');
+        startView.classList.add('hidden');
+        historyButton.classList.add('hidden');
+        document.getElementById('authMessage').textContent = 'Your golf data is available only after sign-in.';
+        return;
+      }
+      authView.classList.add('hidden');
+      startView.classList.remove('hidden');
+      historyButton.classList.remove('hidden');
+      document.getElementById('accountCard').innerHTML = '<div class="round-row"><div><strong id="accountName"></strong><div id="accountEmail" class="muted"></div><div class="muted" style="margin-top:7px;font-size:.75rem;overflow-wrap:anywhere">Firebase UID: <strong id="accountUid"></strong></div></div><button id="signOutButton" class="secondary" type="button">Sign out</button></div>';
+      document.getElementById('accountName').textContent = user.displayName || 'Signed in';
+      document.getElementById('accountEmail').textContent = user.email || '';
+      document.getElementById('accountUid').textContent = user.uid;
+      document.getElementById('signOutButton').addEventListener('click',() => signOut(auth));
+    }
+
+    document.getElementById('googleSignIn').addEventListener('click',authenticateWithGoogle);
+    onAuthStateChanged(auth,renderAuthenticationState);
+  </script>
 
   <script>
     const CLUBS = ['Dr','3W','5W','7W','4H','5i','6i','7i','8i','9i','PW','GW','SW','Putter'];

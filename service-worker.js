@@ -1,4 +1,4 @@
-const CACHE_NAME = 'haggis-golf-v2';
+const CACHE_NAME = 'haggis-golf-v3';
 const ASSETS = ['./','./index.html','./manifest.webmanifest','./app-icon.svg'];
 
 /** Stores the application shell so an already-opened app can work without reception. */
