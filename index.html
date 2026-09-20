@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#123f2b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="PinDrop Golf">
+  <meta name="description" content="A private, phone-first golf score and GPS shot tracker.">
+  <title>PinDrop Golf</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23123f2b'/%3E%3Cpath d='M31 50V13l20 8-20 8' fill='%23f4c95d' stroke='%23f4c95d' stroke-width='3' stroke-linejoin='round'/%3E%3Ccircle cx='22' cy='50' r='7' fill='%23fff'/%3E%3C/svg%3E">
+  <style>
+    :root { --forest:#123f2b; --forest-2:#1e5c3f; --lime:#cdea72; --gold:#f4c95d; --paper:#f5f7f1; --ink:#14231b; --muted:#66746b; --line:#d9dfd7; --white:#fff; --danger:#a63d40; }
+    * { box-sizing:border-box; }
+    html { background:var(--forest); }
+    body { margin:0; min-height:100dvh; color:var(--ink); background:var(--paper); font:16px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    button,input,select { font:inherit; }
+    button { cursor:pointer; }
+    button:focus-visible,input:focus-visible,select:focus-visible { outline:3px solid var(--gold); outline-offset:2px; }
+    .app { width:min(100%,560px); min-height:100dvh; margin:auto; background:var(--paper); box-shadow:0 0 50px rgb(0 0 0 / .16); }
+    .topbar { display:flex; align-items:center; justify-content:space-between; padding:max(16px,env(safe-area-inset-top)) 20px 14px; color:white; background:var(--forest); }
+    .brand { display:flex; gap:10px; align-items:center; font-weight:800; letter-spacing:-.02em; }
+    .flag { width:24px; height:28px; position:relative; border-left:2px solid var(--gold); }
+    .flag::after { content:""; position:absolute; left:1px; top:1px; width:18px; height:11px; background:var(--gold); clip-path:polygon(0 0,100% 28%,0 100%); }
+    .icon-btn { width:42px; height:42px; border:1px solid rgb(255 255 255 / .24); border-radius:50%; color:#fff; background:transparent; display:grid; place-items:center; }
+    main { padding:20px 18px calc(28px + env(safe-area-inset-bottom)); }
+    .eyebrow { color:var(--forest-2); font-size:.78rem; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+    h1 { margin:5px 0 8px; font-size:clamp(1.9rem,8vw,2.8rem); line-height:1.04; letter-spacing:-.045em; }
+    h2 { margin:0; font-size:1.15rem; letter-spacing:-.015em; }
+    p { margin:0; }
+    .muted { color:var(--muted); }
+    .card { padding:18px; border:1px solid var(--line); border-radius:20px; background:var(--white); box-shadow:0 8px 24px rgb(18 63 43 / .06); }
+    .stack { display:grid; gap:14px; }
+    .field { display:grid; gap:6px; }
+    .field label { font-size:.88rem; font-weight:750; }
+    input,select { width:100%; min-height:50px; padding:0 14px; border:1px solid #c9d2ca; border-radius:12px; color:var(--ink); background:#fff; }
+    .segmented { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .segmented button { min-height:48px; border:1px solid var(--line); border-radius:12px; background:#fff; font-weight:750; }
+    .segmented button.active { color:#fff; background:var(--forest); border-color:var(--forest); }
+    .primary { width:100%; min-height:56px; border:0; border-radius:15px; color:#fff; background:var(--forest); font-weight:850; box-shadow:0 7px 18px rgb(18 63 43 / .22); }
+    .secondary { min-height:46px; padding:0 16px; border:1px solid var(--line); border-radius:12px; color:var(--forest); background:#fff; font-weight:750; }
+    .text-button { border:0; color:var(--forest-2); background:transparent; font-weight:750; text-decoration:underline; text-underline-offset:3px; }
+    .history-head { display:flex; justify-content:space-between; align-items:end; margin:28px 2px 10px; }
+    .round-row { display:grid; grid-template-columns:1fr auto; gap:10px; padding:14px 0; border-bottom:1px solid var(--line); }
+    .round-row:last-child { border:0; }
+    .round-score { font-size:1.5rem; font-weight:900; color:var(--forest); }
+    .empty { padding:25px 10px; text-align:center; color:var(--muted); }
+    .round-header { display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; }
+    .hole-title { display:flex; align-items:baseline; gap:8px; }
+    .hole-number { font-size:2.6rem; line-height:1; font-weight:900; letter-spacing:-.06em; }
+    .score-tile { min-width:82px; padding:9px 12px; border-radius:15px; text-align:center; color:#fff; background:var(--forest); }
+    .score-tile strong { display:block; font-size:1.75rem; line-height:1; }
+    .score-tile span { font-size:.72rem; opacity:.82; text-transform:uppercase; letter-spacing:.08em; }
+    .gps { display:flex; gap:8px; align-items:center; min-height:36px; margin:15px 0 8px; color:var(--muted); font-size:.88rem; }
+    .gps-dot { width:9px; height:9px; border-radius:50%; background:#c98c27; box-shadow:0 0 0 4px rgb(201 140 39 / .14); }
+    .gps.good .gps-dot { background:#45a465; box-shadow:0 0 0 4px rgb(69 164 101 / .14); }
+    .gps.bad .gps-dot { background:var(--danger); }
+    .club-label { margin-top:16px; font-size:.8rem; font-weight:850; letter-spacing:.1em; text-transform:uppercase; }
+    .clubs { display:flex; gap:8px; margin:9px -18px 0; padding:2px 18px 12px; overflow:auto; scrollbar-width:none; }
+    .club { flex:0 0 auto; min-width:54px; min-height:44px; padding:0 13px; border:1px solid var(--line); border-radius:999px; color:var(--forest); background:#fff; font-weight:800; }
+    .club.active { color:#fff; background:var(--forest); border-color:var(--forest); }
+    .record-wrap { position:relative; width:190px; height:190px; margin:16px auto 20px; border-radius:50%; background:rgb(205 234 114 / .4); display:grid; place-items:center; }
+    .record { width:154px; height:154px; border:0; border-radius:50%; color:var(--forest); background:var(--lime); box-shadow:inset 0 0 0 4px rgb(255 255 255 / .48),0 12px 28px rgb(18 63 43 / .22); font-weight:900; font-size:1.25rem; line-height:1.15; }
+    .record small { display:block; margin-top:7px; font-size:.72rem; font-weight:750; opacity:.7; }
+    .record:active { transform:scale(.97); }
+    .record[disabled] { cursor:not-allowed; filter:grayscale(.6); opacity:.62; }
+    .last-shot { min-height:52px; padding:12px 14px; border-radius:13px; background:#e9eee8; text-align:center; color:var(--forest); font-size:.92rem; }
+    .actions { display:grid; grid-template-columns:1fr 1.4fr; gap:10px; margin-top:15px; }
+    .next { min-height:50px; border:0; border-radius:13px; color:#fff; background:var(--forest); font-weight:850; }
+    .shot-list { margin-top:18px; }
+    .shot { display:grid; grid-template-columns:35px 1fr auto; gap:10px; align-items:center; padding:11px 2px; border-bottom:1px solid var(--line); }
+    .shot-num { width:31px; height:31px; display:grid; place-items:center; border-radius:50%; color:#fff; background:var(--forest-2); font-size:.82rem; font-weight:850; }
+    .shot strong { display:block; }
+    .shot small { color:var(--muted); }
+    .mini-map { width:100%; height:180px; margin-top:14px; border:1px solid var(--line); border-radius:16px; background:linear-gradient(135deg,#eaf1e6,#f7f8f2); }
+    .dialog { position:fixed; inset:0; z-index:10; display:none; align-items:end; justify-content:center; padding:18px; background:rgb(8 26 18 / .58); }
+    .dialog.open { display:flex; }
+    .sheet { width:min(100%,524px); max-height:88dvh; overflow:auto; padding:20px; border-radius:24px 24px 16px 16px; background:#fff; }
+    .sheet-head { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:16px; }
+    .toast { position:fixed; left:50%; bottom:calc(20px + env(safe-area-inset-bottom)); z-index:30; transform:translate(-50%,20px); opacity:0; pointer-events:none; padding:11px 16px; border-radius:999px; color:#fff; background:#10291e; box-shadow:0 8px 24px rgb(0 0 0 / .25); transition:.22s ease; white-space:nowrap; }
+    .toast.show { opacity:1; transform:translate(-50%,0); }
+    .hidden { display:none !important; }
+    @media (min-width:700px) { body { padding:24px 0; } .app { min-height:calc(100dvh - 48px); border-radius:25px; overflow:hidden; } }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand"><span class="flag" aria-hidden="true"></span>PinDrop Golf</div>
+      <button id="historyButton" class="icon-btn" aria-label="Round history" title="Round history">↻</button>
+    </header>
+
+    <main>
+      <section id="startView">
+        <div class="eyebrow">Your pocket scorecard</div>
+        <h1>Play the course.<br>Keep every shot.</h1>
+        <p class="muted">Start a round, choose your club and tap once from where you hit.</p>
+
+        <div id="resumeRound"></div>
+
+        <form id="startForm" class="card stack" style="margin-top:22px">
+          <div class="field">
+            <label for="courseName">Course</label>
+            <input id="courseName" name="courseName" autocomplete="off" placeholder="e.g. Cheltenham Golf Club" required>
+          </div>
+          <div class="field">
+            <label>Round length</label>
+            <div class="segmented" role="group" aria-label="Round length">
+              <button type="button" class="holes active" data-holes="9">9 holes</button>
+              <button type="button" class="holes" data-holes="18">18 holes</button>
+            </div>
+          </div>
+          <button class="primary" type="submit">Start round</button>
+        </form>
+
+        <div class="history-head"><h2>Recent rounds</h2><button id="viewAllButton" class="text-button" type="button">View all</button></div>
+        <div id="recentRounds" class="card"></div>
+      </section>
+
+      <section id="roundView" class="hidden">
+        <div class="round-header">
+          <div>
+            <div id="activeCourse" class="eyebrow"></div>
+            <div class="hole-title"><span>Hole</span><span id="holeNumber" class="hole-number">1</span><span id="holeTotal" class="muted">of 9</span></div>
+          </div>
+          <div class="score-tile"><strong id="holeScore">0</strong><span>shots</span></div>
+        </div>
+
+        <div id="gpsStatus" class="gps"><span class="gps-dot"></span><span>Finding your GPS position…</span></div>
+
+        <div class="club-label">Club for this shot</div>
+        <div id="clubPicker" class="clubs" role="list" aria-label="Select club"></div>
+
+        <div class="record-wrap">
+          <button id="recordShot" class="record" type="button" disabled>Record shot<small>GPS POSITION</small></button>
+        </div>
+
+        <div id="lastShot" class="last-shot">Your first shot will appear here.</div>
+        <div class="actions">
+          <button id="undoShot" class="secondary" type="button">Undo shot</button>
+          <button id="nextHole" class="next" type="button">Next hole →</button>
+        </div>
+
+        <canvas id="shotMap" class="mini-map" width="520" height="180" aria-label="Diagram of recorded shot positions"></canvas>
+        <div id="shotList" class="shot-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="historyDialog" class="dialog" role="dialog" aria-modal="true" aria-labelledby="historyTitle">
+    <div class="sheet">
+      <div class="sheet-head"><h2 id="historyTitle">Round history</h2><button id="closeHistory" class="icon-btn" style="color:var(--ink);border-color:var(--line)" aria-label="Close">×</button></div>
+      <div id="allRounds"></div>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    const CLUBS = ['Dr','3W','5W','7W','4H','5i','6i','7i','8i','9i','PW','GW','SW','Putter'];
+    const STORAGE_KEY = 'pindrop-golf-rounds-v1';
+    let selectedHoles = 9;
+    let selectedClub = localStorage.getItem('pindrop-last-club') || 'Dr';
+    let activeRound = null;
+    let currentPosition = null;
+    let watchId = null;
+    let wakeLock = null;
+
+    const el = id => document.getElementById(id);
+
+    /** Returns all saved rounds from this device, safely handling invalid stored data. */
+    function getRounds() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
+      catch (error) { console.debug('Could not read saved rounds', error); return []; }
+    }
+
+    /** Persists the current round list on this device. */
+    function saveRounds(rounds) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(rounds));
+    }
+
+    /** Displays brief, accessible feedback after an action. */
+    function showToast(message) {
+      el('toast').textContent = message;
+      el('toast').classList.add('show');
+      window.setTimeout(() => el('toast').classList.remove('show'), 1800);
+    }
+
+    /** Formats a stored date for the local phone locale. */
+    function formatDate(value) {
+      return new Intl.DateTimeFormat(undefined,{day:'numeric',month:'short',year:'numeric'}).format(new Date(value));
+    }
+
+    /** Calculates the distance in metres between two recorded GPS positions. */
+    function distanceMetres(a,b) {
+      const toRad = degrees => degrees * Math.PI / 180;
+      const dLat = toRad(b.latitude-a.latitude);
+      const dLon = toRad(b.longitude-a.longitude);
+      const lat1 = toRad(a.latitude);
+      const lat2 = toRad(b.latitude);
+      const value = Math.sin(dLat/2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon/2) ** 2;
+      return 6371000 * 2 * Math.atan2(Math.sqrt(value),Math.sqrt(1-value));
+    }
+
+    /** Renders the recent and full round-history lists from local storage. */
+    function renderHistory() {
+      const saved = getRounds();
+      const unfinished = saved.find(round => round.inProgress);
+      const rounds = saved.filter(round => round.finishedAt).sort((a,b) => new Date(b.finishedAt)-new Date(a.finishedAt));
+      const markup = items => items.length ? items.map(round => {
+        const shots = round.holes.reduce((total,hole) => total + hole.shots.length,0);
+        return `<div class="round-row"><div><strong>${escapeHtml(round.course)}</strong><div class="muted">${formatDate(round.finishedAt)} · ${round.holeCount} holes</div></div><div class="round-score">${shots}</div></div>`;
+      }).join('') : '<div class="empty">No completed rounds yet.</div>';
+      el('recentRounds').innerHTML = markup(rounds.slice(0,3));
+      el('allRounds').innerHTML = markup(rounds);
+      el('resumeRound').innerHTML = unfinished ? `<div class="card" style="margin-top:20px;background:#eaf2df"><div class="eyebrow">Round in progress</div><div class="round-row"><div><strong>${escapeHtml(unfinished.course)}</strong><div class="muted">Hole ${unfinished.currentHole} of ${unfinished.holeCount}</div></div><button class="secondary" id="resumeButton" type="button">Continue</button></div></div>` : '';
+      el('resumeButton')?.addEventListener('click',() => resumeRound(unfinished));
+    }
+
+    /** Escapes user-entered course names before placing them in HTML. */
+    function escapeHtml(value) {
+      const node = document.createElement('span');
+      node.textContent = value;
+      return node.innerHTML;
+    }
+
+    /** Requests a wake lock so the shot screen stays visible during an active round. */
+    async function requestWakeLock() {
+      if (!('wakeLock' in navigator)) return;
+      try { wakeLock = await navigator.wakeLock.request('screen'); }
+      catch (error) { console.debug('Screen wake lock was not available', error); }
+    }
+
+    /** Starts continuous foreground GPS updates and reports their accuracy. */
+    function startGps() {
+      if (!navigator.geolocation) {
+        updateGpsStatus('GPS is not supported on this device.', 'bad');
+        return;
+      }
+      updateGpsStatus('Finding your GPS position…','');
+      watchId = navigator.geolocation.watchPosition(position => {
+        currentPosition = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: Math.round(position.coords.accuracy),
+          altitude: position.coords.altitude,
+          timestamp: new Date(position.timestamp).toISOString()
+        };
+        const quality = currentPosition.accuracy <= 20 ? 'good' : '';
+        updateGpsStatus(`GPS ready · accuracy ±${currentPosition.accuracy} m`,quality);
+        el('recordShot').disabled = false;
+      }, error => {
+        console.debug('GPS error', error);
+        const message = error.code === 1 ? 'Allow location access to record shots.' : 'GPS unavailable. Move outdoors and try again.';
+        updateGpsStatus(message,'bad');
+        el('recordShot').disabled = true;
+      }, {enableHighAccuracy:true,maximumAge:3000,timeout:15000});
+    }
+
+    /** Updates the GPS state shown beside the active hole. */
+    function updateGpsStatus(message,state) {
+      el('gpsStatus').className = `gps ${state}`;
+      el('gpsStatus').lastElementChild.textContent = message;
+    }
+
+    /** Creates the horizontal club selector and wires its selection state. */
+    function renderClubs() {
+      el('clubPicker').innerHTML = CLUBS.map(club => `<button type="button" class="club ${club===selectedClub?'active':''}" data-club="${club}" role="listitem">${club}</button>`).join('');
+      el('clubPicker').querySelectorAll('.club').forEach(button => button.addEventListener('click',() => {
+        selectedClub = button.dataset.club;
+        localStorage.setItem('pindrop-last-club',selectedClub);
+        renderClubs();
+      }));
+    }
+
+    /** Starts a new local round and opens the shot-recording screen. */
+    async function startRound(course,holeCount) {
+      activeRound = { id:crypto.randomUUID(),course,holeCount,currentHole:1,startedAt:new Date().toISOString(),finishedAt:null,holes:Array.from({length:holeCount},(_,index)=>({number:index+1,shots:[]})) };
+      const rounds = getRounds().filter(round => !round.inProgress);
+      saveRounds([{...activeRound,inProgress:true},...rounds]);
+      el('startView').classList.add('hidden');
+      el('roundView').classList.remove('hidden');
+      renderActiveRound();
+      await requestWakeLock();
+      startGps();
+    }
+
+    /** Restores an unfinished round after the page or phone has been closed. */
+    async function resumeRound(round) {
+      activeRound = round;
+      el('startView').classList.add('hidden');
+      el('roundView').classList.remove('hidden');
+      renderActiveRound();
+      await requestWakeLock();
+      startGps();
+    }
+
+    /** Saves an updated copy of the active round for crash and refresh recovery. */
+    function persistActiveRound() {
+      const rounds = getRounds().filter(round => !(round.inProgress && round.id===activeRound.id));
+      saveRounds([{...activeRound,inProgress:true},...rounds]);
+    }
+
+    /** Records the chosen club, location and time as the next shot on this hole. */
+    function recordShot() {
+      if (!currentPosition) { showToast('Waiting for a GPS position'); return; }
+      const hole = activeRound.holes[activeRound.currentHole-1];
+      hole.shots.push({number:hole.shots.length+1,club:selectedClub,...currentPosition,recordedAt:new Date().toISOString()});
+      persistActiveRound();
+      renderActiveRound();
+      navigator.vibrate?.(45);
+      showToast(`Shot ${hole.shots.length} recorded with ${selectedClub}`);
+    }
+
+    /** Removes the most recently recorded shot from the current hole. */
+    function undoShot() {
+      const shots = activeRound.holes[activeRound.currentHole-1].shots;
+      if (!shots.length) { showToast('No shot to undo'); return; }
+      shots.pop();
+      persistActiveRound();
+      renderActiveRound();
+      showToast('Last shot removed');
+    }
+
+    /** Moves to the next hole or completes and archives the round. */
+    function advanceHole() {
+      if (activeRound.currentHole < activeRound.holeCount) {
+        activeRound.currentHole += 1;
+        selectedClub = 'Dr';
+        persistActiveRound();
+        renderActiveRound();
+        window.scrollTo({top:0,behavior:'smooth'});
+        return;
+      }
+      const finished = {...activeRound,finishedAt:new Date().toISOString(),inProgress:false};
+      const rounds = getRounds().filter(round => round.id !== activeRound.id);
+      saveRounds([finished,...rounds]);
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+      wakeLock?.release();
+      activeRound = null;
+      el('roundView').classList.add('hidden');
+      el('startView').classList.remove('hidden');
+      renderHistory();
+      showToast('Round saved');
+    }
+
+    /** Draws a simple relative plot of shot positions without sending coordinates to a map provider. */
+    function drawShotMap(shots) {
+      const canvas = el('shotMap');
+      const context = canvas.getContext('2d');
+      const ratio = window.devicePixelRatio || 1;
+      const width = canvas.clientWidth || 520;
+      const height = 180;
+      canvas.width = width * ratio; canvas.height = height * ratio;
+      context.scale(ratio,ratio); context.clearRect(0,0,width,height);
+      context.fillStyle='#6b786f'; context.font='14px system-ui';
+      if (!shots.length) { context.textAlign='center'; context.fillText('Shot positions will appear here',width/2,94); return; }
+      const latitudes=shots.map(s=>s.latitude), longitudes=shots.map(s=>s.longitude);
+      const minLat=Math.min(...latitudes), maxLat=Math.max(...latitudes), minLon=Math.min(...longitudes), maxLon=Math.max(...longitudes);
+      const padding=26, spanLat=maxLat-minLat||.00001, spanLon=maxLon-minLon||.00001;
+      const points=shots.map(s=>({x:padding+(s.longitude-minLon)/spanLon*(width-padding*2),y:height-padding-(s.latitude-minLat)/spanLat*(height-padding*2)}));
+      if(points.length>1){context.beginPath();context.moveTo(points[0].x,points[0].y);points.slice(1).forEach(p=>context.lineTo(p.x,p.y));context.strokeStyle='#1e5c3f';context.lineWidth=3;context.setLineDash([6,6]);context.stroke();context.setLineDash([]);}
+      points.forEach((point,index)=>{context.beginPath();context.arc(point.x,point.y,12,0,Math.PI*2);context.fillStyle=index===points.length-1?'#f4c95d':'#123f2b';context.fill();context.fillStyle=index===points.length-1?'#123f2b':'#fff';context.textAlign='center';context.textBaseline='middle';context.font='bold 11px system-ui';context.fillText(String(index+1),point.x,point.y);});
+    }
+
+    /** Refreshes every value and control on the active-round screen. */
+    function renderActiveRound() {
+      const hole = activeRound.holes[activeRound.currentHole-1];
+      el('activeCourse').textContent = activeRound.course;
+      el('holeNumber').textContent = activeRound.currentHole;
+      el('holeTotal').textContent = `of ${activeRound.holeCount}`;
+      el('holeScore').textContent = hole.shots.length;
+      el('nextHole').textContent = activeRound.currentHole === activeRound.holeCount ? 'Finish round ✓' : 'Next hole →';
+      const latest=hole.shots.at(-1), previous=hole.shots.at(-2);
+      el('lastShot').innerHTML = latest ? `<strong>Shot ${latest.number} · ${latest.club}</strong>${previous ? ` · ${Math.round(distanceMetres(previous,latest))} m from previous shot` : ' · tee position saved'}` : 'Your first shot will appear here.';
+      el('shotList').innerHTML = hole.shots.map((shot,index)=>{
+        const distance=index ? `${Math.round(distanceMetres(hole.shots[index-1],shot))} m` : 'Tee';
+        return `<div class="shot"><span class="shot-num">${shot.number}</span><div><strong>${shot.club}</strong><small>GPS ±${shot.accuracy} m</small></div><strong>${distance}</strong></div>`;
+      }).join('');
+      renderClubs();
+      drawShotMap(hole.shots);
+    }
+
+    document.querySelectorAll('.holes').forEach(button => button.addEventListener('click',() => {
+      selectedHoles = Number(button.dataset.holes);
+      document.querySelectorAll('.holes').forEach(item => item.classList.toggle('active',item===button));
+    }));
+    el('startForm').addEventListener('submit',event => { event.preventDefault(); startRound(el('courseName').value.trim(),selectedHoles); });
+    el('recordShot').addEventListener('click',recordShot);
+    el('undoShot').addEventListener('click',undoShot);
+    el('nextHole').addEventListener('click',advanceHole);
+    [el('historyButton'),el('viewAllButton')].forEach(button=>button.addEventListener('click',()=>{el('historyDialog').classList.add('open');renderHistory();}));
+    el('closeHistory').addEventListener('click',()=>el('historyDialog').classList.remove('open'));
+    el('historyDialog').addEventListener('click',event=>{if(event.target===el('historyDialog'))el('historyDialog').classList.remove('open');});
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&activeRound)requestWakeLock();});
+    window.addEventListener('resize',()=>{if(activeRound)drawShotMap(activeRound.holes[activeRound.currentHole-1].shots);});
+
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js').catch(error => console.debug('Offline setup unavailable',error));
+    renderHistory();
+  </script>
+</body>
+</html>

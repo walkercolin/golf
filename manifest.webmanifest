@@ -1,0 +1,17 @@
+{
+  "name": "PinDrop Golf",
+  "short_name": "PinDrop",
+  "description": "Private golf score and GPS shot tracker.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5f7f1",
+  "theme_color": "#123f2b",
+  "icons": [
+    {
+      "src": "./app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
